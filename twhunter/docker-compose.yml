@@ -1,0 +1,105 @@
+version: "3.8"
+   
+services:
+    db:
+        build: .
+        image: postgres
+        container_name: pgdb
+        ports:
+          - 5432:5432
+            
+        environment:
+            - POSTGRES_DB=twhunter
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=postgres
+            - POSTGRES_HOST=db
+        volumes:
+            - pgdata:/var/lib/postgresql/data/
+        networks:
+            - djangonetwork
+    redis:
+        build: .
+        container_name: redis
+        image: "redis:alpine"
+        networks:
+            - djangonetwork
+
+    pgadmin:
+        build: .
+        container_name: pgadmin
+        image: dpage/pgadmin4
+        ports:
+          - 5000:5000
+        environment:
+            - PGADMIN_DEFAULT_EMAIL=xxx@naber.com
+            - PGADMIN_DEFAULT_PASSWORD=postgres
+        networks:
+            - djangonetwork
+
+
+    django:
+        build: .
+        container_name: django
+        command: python manage.py runserver 0.0.0.0:8000
+        volumes:
+            - .:/usr/src/app/
+        ports:
+            - "8000:8000"
+        environment:
+            - DEBUG=1
+            - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]
+            - CELERY_BROKER=redis://redis:6379/0
+            - CELERY_BACKEND=redis://redis:6379/0
+            - POSTGRES_DB=twhunter
+            - POSTGRES_PASSWORD=postgres
+            - POSTGRES_USER=postgres
+            - POSTGRES_HOST=db
+        depends_on:
+            - db
+            - redis
+        networks:
+            - djangonetwork
+
+    celery-worker:
+        build: .
+        container_name: celery-worker
+        command: celery -A twhunter worker -l INFO
+        volumes:
+            - .:/usr/src/app
+        environment:
+            - DEBUG=1
+            - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]
+            - CELERY_BROKER=redis://redis:6379/0
+            - CELERY_BACKEND=redis://redis:6379/0
+        depends_on:
+            - django
+            - redis
+        networks:
+            - djangonetwork
+        
+
+    celery-beat:
+        build: .
+        container_name: celery-beat
+        command: celery -A twhunter beat -l INFO
+        volumes:
+            - .:/usr/src/app
+        environment:
+            - DEBUG=1
+        
+        depends_on:
+            - django
+            - celery-worker
+            - redis
+        networks:
+            - djangonetwork
+
+
+volumes:
+  pgdata:
+
+networks:
+    djangonetwork:
+        driver: bridge
+
+
